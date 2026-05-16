@@ -114,19 +114,7 @@ export function ElementRenderer({ element, isSelected }: ElementRendererProps) {
               ))}
             </text>
           )}
-          {/* Type label below */}
-          <text
-            x={midX}
-            y={maxY + 18}
-            fill={labelColor}
-            fontSize="11"
-            fontWeight="500"
-            fontFamily="Inter, sans-serif"
-            textAnchor="middle"
-            style={{ userSelect: 'none', opacity: 0.6, pointerEvents: 'none' }}
-          >
-            {isOptional ? 'Optional VP' : 'Mandatory VP'}
-          </text>
+
         </g>
       );
     }
@@ -191,19 +179,7 @@ export function ElementRenderer({ element, isSelected }: ElementRendererProps) {
               ))}
             </text>
           )}
-          {/* Type label below */}
-          <text
-            x={midX}
-            y={maxY + 18}
-            fill={labelColor}
-            fontSize="11"
-            fontWeight="500"
-            fontFamily="Inter, sans-serif"
-            textAnchor="middle"
-            style={{ userSelect: 'none', opacity: 0.6, pointerEvents: 'none' }}
-          >
-            Variant
-          </text>
+
         </g>
       );
     }
