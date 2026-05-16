@@ -315,6 +315,17 @@ export function Canvas() {
         pendingStartBinding.current = undefined;
         pendingEndBinding.current = undefined;
         setSnapIndicator(null);
+
+        // If we just drew an alternative arc, prompt for its min..max cardinality
+        if (lastEl.type === 'alternative-arc') {
+          const cx = (x1 + x2) / 2;
+          const dy = Math.abs(y2 - y1);
+          const dx = Math.abs(x2 - x1);
+          const curvature = Math.max(40, Math.min(80, (dx + dy) * 0.3));
+          const cy = Math.min(y1, y2) - curvature - 20;
+          setPendingNamingId(lastEl.id);
+          setNamingPosition({ x: cx, y: cy });
+        }
       } else {
         // Give a default size if just clicked without dragging
         if (Math.abs(x2 - x1) < 5 && Math.abs(y2 - y1) < 5) {

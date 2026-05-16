@@ -286,7 +286,7 @@ export function ElementRenderer({ element, isSelected }: ElementRendererProps) {
             textAnchor="middle"
             style={{ userSelect: 'none' }}
           >
-            [min..max]
+            {label || '[min..max]'}
           </text>
           {/* Wider hit area */}
           <path

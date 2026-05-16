@@ -5,6 +5,7 @@ const TYPE_LABELS: Record<string, string> = {
   'mandatory-vp': 'Mandatory VP',
   'optional-vp': 'Optional VP',
   'variant': 'Variant',
+  'alternative-arc': 'Alternative Line',
 };
 
 interface NamingDialogProps {
@@ -40,6 +41,7 @@ export function NamingDialog({ elementType, position, onConfirm, onCancel }: Nam
   };
 
   const typeLabel = TYPE_LABELS[elementType] || elementType;
+  const isArc = elementType === 'alternative-arc';
 
   return (
     <div
@@ -79,7 +81,7 @@ export function NamingDialog({ elementType, position, onConfirm, onCancel }: Nam
               marginBottom: 8,
             }}
           >
-            Name this {typeLabel}
+            {isArc ? 'Set Cardinality (min..max)' : `Name this ${typeLabel}`}
           </div>
 
           <input
@@ -87,7 +89,7 @@ export function NamingDialog({ elementType, position, onConfirm, onCancel }: Nam
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={`e.g. "Engine Type"`}
+            placeholder={isArc ? 'e.g. "1..*"' : `e.g. "Engine Type"`}
             style={{
               width: '100%',
               padding: '10px 14px',
