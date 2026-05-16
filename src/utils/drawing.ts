@@ -164,3 +164,34 @@ export function findSnapTarget(
 
   return best;
 }
+
+/**
+ * Returns elements that are inside or intersecting a selection box.
+ */
+export function getElementsInBox(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  elements: Element[]
+): Element[] {
+  const minBoxX = Math.min(startX, endX);
+  const maxBoxX = Math.max(startX, endX);
+  const minBoxY = Math.min(startY, endY);
+  const maxBoxY = Math.max(startY, endY);
+
+  return elements.filter((el) => {
+    const minElX = Math.min(el.x1, el.x2);
+    const maxElX = Math.max(el.x1, el.x2);
+    const minElY = Math.min(el.y1, el.y2);
+    const maxElY = Math.max(el.y1, el.y2);
+
+    // Simple AABB intersection check
+    return (
+      minElX <= maxBoxX &&
+      maxElX >= minBoxX &&
+      minElY <= maxBoxY &&
+      maxElY >= minBoxY
+    );
+  });
+}

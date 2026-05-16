@@ -9,6 +9,7 @@ import {
   resolveBindingPoint,
   getShapeAnchors,
   getLineHandleAtPosition,
+  getElementsInBox,
 } from '../utils/drawing';
 import { ElementRenderer } from './ElementRenderer';
 import { Toolbar } from './Toolbar';
@@ -21,7 +22,9 @@ export function Canvas() {
   const [elements, setElements] = useState<Element[]>([]);
   const [action, setAction] = useState<Action>('none');
   const [tool, setTool] = useState<Tool>('selection');
-  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [selectedElementIds, setSelectedElementIds] = useState<Set<string>>(new Set());
+  const [selectionBoxStart, setSelectionBoxStart] = useState<{ x: number; y: number } | null>(null);
+  const [selectionBoxEnd, setSelectionBoxEnd] = useState<{ x: number; y: number } | null>(null);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -53,30 +56,41 @@ export function Canvas() {
     const { clientX, clientY } = e;
 
     if (tool === 'selection') {
-      // Check if clicking a handle of the selected element
-      if (selectedElementId) {
-        const selectedEl = elements.find((e) => e.id === selectedElementId);
+      // Check if clicking a handle of ANY selected line
+      let clickedHandle = false;
+      for (const id of Array.from(selectedElementIds)) {
+        const selectedEl = elements.find((e) => e.id === id);
         if (selectedEl && isLineType(selectedEl.type)) {
           const handle = getLineHandleAtPosition(clientX, clientY, selectedEl);
           if (handle === 'start') {
             setAction('resizing-start');
             pendingStartBinding.current = undefined;
-            return;
+            setSelectedElementIds(new Set([id]));
+            clickedHandle = true;
+            break;
           } else if (handle === 'end') {
             setAction('resizing-end');
             pendingEndBinding.current = undefined;
-            return;
+            setSelectedElementIds(new Set([id]));
+            clickedHandle = true;
+            break;
           }
         }
       }
+      if (clickedHandle) return;
 
       const element = getElementAtPosition(clientX, clientY, elements);
       if (element) {
-        setSelectedElementId(element.id);
+        if (!selectedElementIds.has(element.id)) {
+          setSelectedElementIds(new Set([element.id]));
+        }
         setAction('moving');
         setDragStartPos({ x: clientX, y: clientY });
       } else {
-        setSelectedElementId(null);
+        setSelectedElementIds(new Set());
+        setAction('selecting');
+        setSelectionBoxStart({ x: clientX, y: clientY });
+        setSelectionBoxEnd({ x: clientX, y: clientY });
       }
     } else {
       // Check for snap on start point (only for lines)
@@ -103,7 +117,7 @@ export function Canvas() {
         y2: startY,
       };
       setElements((prev) => [...prev, newElement]);
-      setSelectedElementId(newElement.id);
+      setSelectedElementIds(new Set([newElement.id]));
       setAction('drawing');
     }
   };
@@ -117,16 +131,22 @@ export function Canvas() {
       let newCursor = 'default';
       const el = getElementAtPosition(clientX, clientY, elements);
       
-      if (selectedElementId) {
-        const selectedEl = elements.find((e) => e.id === selectedElementId);
-        if (selectedEl && isLineType(selectedEl.type)) {
-          if (getLineHandleAtPosition(clientX, clientY, selectedEl)) {
-            newCursor = 'pointer';
+      let hoveredHandle = false;
+      if (selectedElementIds.size > 0) {
+        for (const id of Array.from(selectedElementIds)) {
+          const selectedEl = elements.find((e) => e.id === id);
+          if (selectedEl && isLineType(selectedEl.type)) {
+            if (getLineHandleAtPosition(clientX, clientY, selectedEl)) {
+              hoveredHandle = true;
+              break;
+            }
           }
         }
       }
       
-      if (newCursor === 'default' && el) {
+      if (hoveredHandle) {
+        newCursor = 'pointer';
+      } else if (newCursor === 'default' && el) {
         newCursor = 'move';
       }
       (e.target as SVGElement).style.cursor = newCursor;
@@ -151,33 +171,51 @@ export function Canvas() {
       } else {
         updateElement(lastEl.id, { x2: clientX, y2: clientY });
       }
-    } else if (action === 'moving' && selectedElementId) {
+    } else if (action === 'selecting' && selectionBoxStart) {
+      setSelectionBoxEnd({ x: clientX, y: clientY });
+      const elementsInBox = getElementsInBox(
+        selectionBoxStart.x,
+        selectionBoxStart.y,
+        clientX,
+        clientY,
+        elements
+      );
+      setSelectedElementIds(new Set(elementsInBox.map((el) => el.id)));
+    } else if (action === 'moving' && selectedElementIds.size > 0) {
       const dx = clientX - dragStartPos.x;
       const dy = clientY - dragStartPos.y;
 
       setElements((prev) => {
-        const movedEl = prev.find((el) => el.id === selectedElementId);
-        if (!movedEl) return prev;
+        let newElements = [...prev];
 
-        // Move the element itself
-        let newElements = prev.map((el) =>
-          el.id === selectedElementId
+        // 1. Move all selected elements
+        newElements = newElements.map((el) =>
+          selectedElementIds.has(el.id)
             ? { ...el, x1: el.x1 + dx, y1: el.y1 + dy, x2: el.x2 + dx, y2: el.y2 + dy }
             : el,
         );
 
-        // If we moved a shape, update all lines bound to it
-        if (isShapeType(movedEl.type)) {
-          const updatedShape = newElements.find((el) => el.id === selectedElementId)!;
+        // 2. For any moved shapes, update bound lines
+        const movedShapeIds = new Set(
+          Array.from(selectedElementIds).filter((id) => {
+            const el = prev.find((e) => e.id === id);
+            return el && isShapeType(el.type);
+          })
+        );
+
+        if (movedShapeIds.size > 0) {
           newElements = newElements.map((el) => {
             if (!isLineType(el.type)) return el;
             let updated = { ...el };
-            if (el.startBinding?.elementId === selectedElementId) {
-              const pt = resolveBindingPoint(el.startBinding, updatedShape);
+            
+            if (el.startBinding && movedShapeIds.has(el.startBinding.elementId)) {
+              const shape = newElements.find((s) => s.id === el.startBinding!.elementId)!;
+              const pt = resolveBindingPoint(el.startBinding, shape);
               updated = { ...updated, x1: pt.x, y1: pt.y };
             }
-            if (el.endBinding?.elementId === selectedElementId) {
-              const pt = resolveBindingPoint(el.endBinding, updatedShape);
+            if (el.endBinding && movedShapeIds.has(el.endBinding.elementId)) {
+              const shape = newElements.find((s) => s.id === el.endBinding!.elementId)!;
+              const pt = resolveBindingPoint(el.endBinding, shape);
               updated = { ...updated, x2: pt.x, y2: pt.y };
             }
             return updated;
@@ -188,7 +226,8 @@ export function Canvas() {
       });
 
       setDragStartPos({ x: clientX, y: clientY });
-    } else if (action === 'resizing-start' && selectedElementId) {
+    } else if (action === 'resizing-start' && selectedElementIds.size === 1) {
+      const selectedElementId = Array.from(selectedElementIds)[0];
       const snap = findSnapTarget(clientX, clientY, elements);
       if (snap) {
         updateElement(selectedElementId, { x1: snap.snappedPoint.x, y1: snap.snappedPoint.y });
@@ -199,7 +238,8 @@ export function Canvas() {
         pendingStartBinding.current = undefined;
         setSnapIndicator(null);
       }
-    } else if (action === 'resizing-end' && selectedElementId) {
+    } else if (action === 'resizing-end' && selectedElementIds.size === 1) {
+      const selectedElementId = Array.from(selectedElementIds)[0];
       const snap = findSnapTarget(clientX, clientY, elements);
       if (snap) {
         updateElement(selectedElementId, { x2: snap.snappedPoint.x, y2: snap.snappedPoint.y });
@@ -249,7 +289,8 @@ export function Canvas() {
           setNamingPosition({ x: cx, y: cy });
         }
       }
-    } else if ((action === 'resizing-start' || action === 'resizing-end') && selectedElementId) {
+    } else if ((action === 'resizing-start' || action === 'resizing-end') && selectedElementIds.size === 1) {
+      const selectedElementId = Array.from(selectedElementIds)[0];
       const finalUpdates: Partial<Element> = {};
       if (action === 'resizing-start') {
         finalUpdates.startBinding = pendingStartBinding.current;
@@ -279,7 +320,7 @@ export function Canvas() {
   const handleNamingCancel = useCallback(() => {
     if (pendingNamingId) {
       setElements((prev) => prev.filter((el) => el.id !== pendingNamingId));
-      setSelectedElementId(null);
+      setSelectedElementIds(new Set());
     }
     setPendingNamingId(null);
   }, [pendingNamingId]);
@@ -288,7 +329,7 @@ export function Canvas() {
 
   const handleClear = useCallback(() => {
     setElements([]);
-    setSelectedElementId(null);
+    setSelectedElementIds(new Set());
   }, []);
 
   const handleExport = useCallback(() => {
@@ -317,7 +358,7 @@ export function Canvas() {
 
   const handleAiGenerate = useCallback((generatedElements: Element[]) => {
     setElements(generatedElements);
-    setSelectedElementId(null);
+    setSelectedElementIds(new Set());
     setShowAiDialog(false);
     setTool('selection');
   }, []);
@@ -358,26 +399,25 @@ export function Canvas() {
           break;
         case 'delete':
         case 'backspace':
-          if (selectedElementId) {
+          if (selectedElementIds.size > 0) {
             setElements((prev) => {
-              // Also clear bindings that reference the deleted element
-              const filtered = prev.filter((el) => el.id !== selectedElementId);
+              const filtered = prev.filter((el) => !selectedElementIds.has(el.id));
               return filtered.map((el) => {
                 let updated = el;
-                if (el.startBinding?.elementId === selectedElementId) {
+                if (el.startBinding && selectedElementIds.has(el.startBinding.elementId)) {
                   updated = { ...updated, startBinding: undefined };
                 }
-                if (el.endBinding?.elementId === selectedElementId) {
+                if (el.endBinding && selectedElementIds.has(el.endBinding.elementId)) {
                   updated = { ...updated, endBinding: undefined };
                 }
                 return updated;
               });
             });
-            setSelectedElementId(null);
+            setSelectedElementIds(new Set());
           }
           break;
         case 'escape':
-          setSelectedElementId(null);
+          setSelectedElementIds(new Set());
           setTool('selection');
           break;
       }
@@ -385,7 +425,7 @@ export function Canvas() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedElementId]);
+  }, [selectedElementIds]);
 
   // ─── Render helper: anchor points on shapes when drawing lines ──────────
 
@@ -396,7 +436,9 @@ export function Canvas() {
 
   const renderAnchorPoints = () => {
     if (!isDrawingLine) return null;
-    const activeElId = action === 'drawing' ? elements[elements.length - 1].id : selectedElementId;
+    const activeElId = action === 'drawing' 
+      ? elements[elements.length - 1].id 
+      : (selectedElementIds.size === 1 ? Array.from(selectedElementIds)[0] : null);
 
     return elements
       .filter((el) => isShapeType(el.type) && el.id !== activeElId)
@@ -466,9 +508,24 @@ export function Canvas() {
           <ElementRenderer
             key={element.id}
             element={element}
-            isSelected={element.id === selectedElementId}
+            isSelected={selectedElementIds.has(element.id)}
           />
         ))}
+
+        {/* Selection Box */}
+        {action === 'selecting' && selectionBoxStart && selectionBoxEnd && (
+          <rect
+            x={Math.min(selectionBoxStart.x, selectionBoxEnd.x)}
+            y={Math.min(selectionBoxStart.y, selectionBoxEnd.y)}
+            width={Math.abs(selectionBoxEnd.x - selectionBoxStart.x)}
+            height={Math.abs(selectionBoxEnd.y - selectionBoxStart.y)}
+            fill="var(--selection-color)"
+            fillOpacity={0.1}
+            stroke="var(--selection-color)"
+            strokeWidth={1}
+            style={{ pointerEvents: 'none' }}
+          />
+        )}
 
         {/* Anchor points visible while drawing lines */}
         {renderAnchorPoints()}

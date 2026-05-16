@@ -29,7 +29,7 @@ export interface Element {
   endBinding?: Binding;
 }
 
-export type Action = 'drawing' | 'moving' | 'resizing' | 'resizing-start' | 'resizing-end' | 'none';
+export type Action = 'drawing' | 'moving' | 'resizing' | 'resizing-start' | 'resizing-end' | 'selecting' | 'none';
 
 export interface Point {
   x: number;
