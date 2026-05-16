@@ -11,6 +11,7 @@ import {
   getLineHandleAtPosition,
   getElementsInBox,
 } from '../utils/drawing';
+import { useHistory } from '../hooks/useHistory';
 import { ElementRenderer } from './ElementRenderer';
 import { Toolbar } from './Toolbar';
 import { NamingDialog } from './NamingDialog';
@@ -19,7 +20,13 @@ import { AiPromptDialog } from './AiPromptDialog';
 const SHAPE_TYPE_LIST: ElementType[] = ['mandatory-vp', 'optional-vp', 'variant'];
 
 export function Canvas() {
-  const [elements, setElements] = useState<Element[]>([]);
+  const {
+    state: elements,
+    setPresent: setElements,
+    commitHistory,
+    undo,
+    redo,
+  } = useHistory<Element[]>([]);
   const [action, setAction] = useState<Action>('none');
   const [tool, setTool] = useState<Tool>('selection');
   const [selectedElementIds, setSelectedElementIds] = useState<Set<string>>(new Set());
@@ -46,7 +53,7 @@ export function Canvas() {
     (id: string, updates: Partial<Element>) => {
       setElements((prev) => prev.map((el) => (el.id === id ? { ...el, ...updates } : el)));
     },
-    [],
+    [setElements],
   );
 
   // ─── Mouse handlers ─────────────────────────────────────────────────────
@@ -302,6 +309,11 @@ export function Canvas() {
       pendingEndBinding.current = undefined;
       setSnapIndicator(null);
     }
+
+    if (action !== 'none' && action !== 'selecting') {
+      commitHistory();
+    }
+
     setAction('none');
   };
 
@@ -311,26 +323,29 @@ export function Canvas() {
     (name: string) => {
       if (pendingNamingId) {
         updateElement(pendingNamingId, { label: name });
+        commitHistory();
       }
       setPendingNamingId(null);
     },
-    [pendingNamingId, updateElement],
+    [pendingNamingId, updateElement, commitHistory],
   );
 
   const handleNamingCancel = useCallback(() => {
     if (pendingNamingId) {
       setElements((prev) => prev.filter((el) => el.id !== pendingNamingId));
       setSelectedElementIds(new Set());
+      commitHistory();
     }
     setPendingNamingId(null);
-  }, [pendingNamingId]);
+  }, [pendingNamingId, setElements, commitHistory]);
 
   // ─── Actions ────────────────────────────────────────────────────────────
 
   const handleClear = useCallback(() => {
     setElements([]);
     setSelectedElementIds(new Set());
-  }, []);
+    commitHistory();
+  }, [setElements, commitHistory]);
 
   const handleExport = useCallback(() => {
     if (!svgRef.current) return;
@@ -361,13 +376,30 @@ export function Canvas() {
     setSelectedElementIds(new Set());
     setShowAiDialog(false);
     setTool('selection');
-  }, []);
+    commitHistory();
+  }, [setElements, commitHistory]);
 
   // ─── Keyboard shortcuts ─────────────────────────────────────────────────
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+        return;
+      }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        redo();
+        return;
+      }
 
       switch (e.key.toLowerCase()) {
         case 'v':
@@ -414,6 +446,7 @@ export function Canvas() {
               });
             });
             setSelectedElementIds(new Set());
+            commitHistory();
           }
           break;
         case 'escape':
@@ -425,7 +458,7 @@ export function Canvas() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedElementIds]);
+  }, [selectedElementIds, setElements, commitHistory, undo, redo]);
 
   // ─── Render helper: anchor points on shapes when drawing lines ──────────
 
