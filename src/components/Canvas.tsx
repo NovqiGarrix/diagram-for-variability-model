@@ -326,6 +326,8 @@ export function Canvas() {
           setPendingNamingId(lastEl.id);
           setNamingPosition({ x: cx, y: cy });
         }
+        
+        setTool('selection');
       } else {
         // Give a default size if just clicked without dragging
         if (Math.abs(x2 - x1) < 5 && Math.abs(y2 - y1) < 5) {
