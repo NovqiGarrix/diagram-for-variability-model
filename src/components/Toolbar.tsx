@@ -10,6 +10,7 @@ import {
   ArrowLeftRight,
   Trash2,
   Download,
+  Sparkles,
 } from 'lucide-react';
 import React, { useState } from 'react';
 
@@ -18,6 +19,7 @@ interface ToolbarProps {
   setCurrentTool: (tool: Tool) => void;
   onClear: () => void;
   onExport: () => void;
+  onOpenAiDialog: () => void;
   elementCount: number;
 }
 
@@ -121,7 +123,7 @@ function Separator() {
   );
 }
 
-export function Toolbar({ currentTool, setCurrentTool, onClear, onExport, elementCount }: ToolbarProps) {
+export function Toolbar({ currentTool, setCurrentTool, onClear, onExport, onOpenAiDialog, elementCount }: ToolbarProps) {
   return (
     <>
       {/* Main toolbar */}
@@ -164,6 +166,31 @@ export function Toolbar({ currentTool, setCurrentTool, onClear, onExport, elemen
             onClick={() => setCurrentTool(tool.id)}
           />
         ))}
+
+        <Separator />
+
+        {/* AI Generate button */}
+        <button
+          title="AI Diagram Generator"
+          className="flex items-center justify-center rounded-lg transition-all duration-150 cursor-pointer"
+          style={{
+            width: 36,
+            height: 36,
+            color: '#6965db',
+            backgroundColor: 'transparent',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(105, 101, 219, 0.1)';
+            e.currentTarget.style.transform = 'scale(1.08)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent';
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+          onClick={onOpenAiDialog}
+        >
+          <Sparkles size={18} />
+        </button>
 
         <Separator />
 

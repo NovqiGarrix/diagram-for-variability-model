@@ -13,6 +13,7 @@ import {
 import { ElementRenderer } from './ElementRenderer';
 import { Toolbar } from './Toolbar';
 import { NamingDialog } from './NamingDialog';
+import { AiPromptDialog } from './AiPromptDialog';
 
 const SHAPE_TYPE_LIST: ElementType[] = ['mandatory-vp', 'optional-vp', 'variant'];
 
@@ -30,6 +31,9 @@ export function Canvas() {
 
   // Snap indicator state (shown while drawing lines)
   const [snapIndicator, setSnapIndicator] = useState<{ x: number; y: number } | null>(null);
+
+  // AI dialog state
+  const [showAiDialog, setShowAiDialog] = useState(false);
 
   // Store pending bindings during line drawing
   const pendingStartBinding = useRef<Binding | undefined>(undefined);
@@ -309,6 +313,15 @@ export function Canvas() {
     URL.revokeObjectURL(url);
   }, []);
 
+  // ─── AI generate handler ────────────────────────────────────────────────
+
+  const handleAiGenerate = useCallback((generatedElements: Element[]) => {
+    setElements(generatedElements);
+    setSelectedElementId(null);
+    setShowAiDialog(false);
+    setTool('selection');
+  }, []);
+
   // ─── Keyboard shortcuts ─────────────────────────────────────────────────
 
   useEffect(() => {
@@ -416,6 +429,7 @@ export function Canvas() {
         setCurrentTool={setTool}
         onClear={handleClear}
         onExport={handleExport}
+        onOpenAiDialog={() => setShowAiDialog(true)}
         elementCount={elements.length}
       />
 
@@ -498,6 +512,15 @@ export function Canvas() {
             />
           );
         })()}
+
+      {/* AI Prompt dialog */}
+      {showAiDialog && (
+        <AiPromptDialog
+          onGenerate={handleAiGenerate}
+          onClose={() => setShowAiDialog(false)}
+          hasExistingElements={elements.length > 0}
+        />
+      )}
     </div>
   );
 }
