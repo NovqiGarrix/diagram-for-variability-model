@@ -17,57 +17,35 @@ function getGeminiClient() {
 
 // ─── System Prompt ───────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are an expert OVM (Orthogonal Variability Model) diagram generator. Your task is to convert natural language descriptions into precise OVM diagram element arrays.
+const SYSTEM_PROMPT = `You are an expert OVM (Orthogonal Variability Model) diagram generator. Your task is to convert natural language descriptions into a precise graph of nodes and edges.
 
-## OVM Element Types
+## Node Types
+- \`mandatory-vp\` — Mandatory Variation Point (always required in the product).
+- \`optional-vp\` — Optional Variation Point (may or may not be included).
+- \`variant\` — A concrete variant/option.
 
-**Shapes (nodes):**
-- \`mandatory-vp\` — Mandatory Variation Point (filled triangle with "VP" header). Always required in the product.
-- \`optional-vp\` — Optional Variation Point (dashed triangle with "VP" header). May or may not be included.
-- \`variant\` — A concrete variant/option (rectangle with "V" corner badge).
-
-**Lines (connections):**
-- \`mandatory-line\` — Solid line connecting a VP to a mandatory variant (must be selected).
-- \`optional-line\` — Dashed line connecting a VP to an optional variant (may be selected).
-- \`alternative-arc\` — Arc indicating alternative choice constraint between variants.
-- \`requires-line\` — Dashed arrow indicating a requires dependency between elements.
-- \`excludes-line\` — Dashed double-arrow indicating mutual exclusion between elements.
-
-## Element Schema
-
-Each element has:
-- \`type\`: one of the types listed above
-- \`x1, y1\`: top-left corner (for shapes) or start point (for lines)
-- \`x2, y2\`: bottom-right corner (for shapes) or end point (for lines)
-- \`label\`: display name (required for shapes, omit for lines)
-
-## Layout Rules
-
-1. Place the canvas origin at approximately (200, 100).
-2. Variation Points (VPs) should be placed in a row at the top, spaced ~300px apart horizontally.
-3. Each VP should be ~140px wide and ~110px tall.
-4. Variants should be placed ~200px below their parent VP, spaced ~180px apart horizontally, centered under the VP.
-5. Each Variant should be ~130px wide and ~50px tall.
-6. Lines connect from the bottom-center of a VP to the top-center of a Variant.
-7. For cross-cutting constraints (requires/excludes), draw lines between the relevant variants or VPs.
-8. Keep all coordinates positive and reasonable (within 200-1600 x range, 100-800 y range).
-
-## Connection Coordinate Rules
-
-For lines connecting a VP to a Variant:
-- The line's (x1, y1) should be the bottom-center of the VP: x1 = VP.x1 + (VP.x2 - VP.x1)/2, y1 = VP.y2
-- The line's (x2, y2) should be the top-center of the Variant: x2 = V.x1 + (V.x2 - V.x1)/2, y2 = V.y1
+## Edge Types
+- \`mandatory-line\` — Connects a VP to a mandatory variant.
+- \`optional-line\` — Connects a VP to an optional variant.
+- \`alternative-arc\` — Indicates an alternative choice constraint between variants.
+- \`requires-line\` — Indicates a requires dependency.
+- \`excludes-line\` — Indicates mutual exclusion.
 
 ## Output Format
+Return a JSON object with two arrays: "nodes" and "edges".
+Each node must have a unique string "id" (e.g. "n1"), a "type", and a "label".
+Each edge must have a "type", a "source" (node id), and a "target" (node id).
 
-Return ONLY a JSON object with an "elements" array. Place shapes first, then lines. Example:
+Example:
 {
-  "elements": [
-    { "type": "mandatory-vp", "x1": 200, "y1": 100, "x2": 340, "y2": 210, "label": "Engine" },
-    { "type": "variant", "x1": 150, "y1": 310, "x2": 280, "y2": 360, "label": "Diesel" },
-    { "type": "variant", "x1": 300, "y1": 310, "x2": 430, "y2": 360, "label": "Petrol" },
-    { "type": "mandatory-line", "x1": 270, "y1": 210, "x2": 215, "y2": 310 },
-    { "type": "optional-line", "x1": 270, "y1": 210, "x2": 365, "y2": 310 }
+  "nodes": [
+    { "id": "vp1", "type": "mandatory-vp", "label": "Engine" },
+    { "id": "v1", "type": "variant", "label": "Diesel" },
+    { "id": "v2", "type": "variant", "label": "Petrol" }
+  ],
+  "edges": [
+    { "type": "mandatory-line", "source": "vp1", "target": "v1" },
+    { "type": "optional-line", "source": "vp1", "target": "v2" }
   ]
 }`;
 
@@ -76,19 +54,33 @@ Return ONLY a JSON object with an "elements" array. Place shapes first, then lin
 const RESPONSE_SCHEMA = {
   type: Type.OBJECT,
   properties: {
-    elements: {
+    nodes: {
       type: Type.ARRAY,
-      description: 'Array of OVM diagram elements (shapes and lines)',
+      description: 'Array of nodes (shapes)',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          id: { type: Type.STRING, description: 'Unique ID for the node' },
+          type: {
+            type: Type.STRING,
+            description: 'Node type',
+            enum: ['mandatory-vp', 'optional-vp', 'variant'],
+          },
+          label: { type: Type.STRING, description: 'Display label' },
+        },
+        required: ['id', 'type', 'label'],
+      },
+    },
+    edges: {
+      type: Type.ARRAY,
+      description: 'Array of edges (lines connecting nodes)',
       items: {
         type: Type.OBJECT,
         properties: {
           type: {
             type: Type.STRING,
-            description: 'Element type',
+            description: 'Edge type',
             enum: [
-              'mandatory-vp',
-              'optional-vp',
-              'variant',
               'mandatory-line',
               'optional-line',
               'alternative-arc',
@@ -96,17 +88,14 @@ const RESPONSE_SCHEMA = {
               'excludes-line',
             ],
           },
-          x1: { type: Type.NUMBER, description: 'Start X or left X coordinate' },
-          y1: { type: Type.NUMBER, description: 'Start Y or top Y coordinate' },
-          x2: { type: Type.NUMBER, description: 'End X or right X coordinate' },
-          y2: { type: Type.NUMBER, description: 'End Y or bottom Y coordinate' },
-          label: { type: Type.STRING, description: 'Display label for shapes (omit for lines)' },
+          source: { type: Type.STRING, description: 'Source node ID' },
+          target: { type: Type.STRING, description: 'Target node ID' },
         },
-        required: ['type', 'x1', 'y1', 'x2', 'y2'],
+        required: ['type', 'source', 'target'],
       },
     },
   },
-  required: ['elements'],
+  required: ['nodes', 'edges'],
 };
 
 // ─── Server Function ─────────────────────────────────────────────────────────
@@ -139,22 +128,176 @@ export const generateDiagram = createServerFn({ method: 'POST' })
       throw new Error('Gemini returned an empty response. Please try again.');
     }
 
-    let parsed: { elements: Array<Omit<Element, 'id'>> };
+    let parsed: {
+      nodes: Array<{ id: string; type: string; label: string }>;
+      edges: Array<{ type: string; source: string; target: string }>;
+    };
     try {
       parsed = JSON.parse(text);
     } catch {
       throw new Error('Failed to parse Gemini response as JSON. Please try again.');
     }
 
-    if (!parsed.elements || !Array.isArray(parsed.elements)) {
+    if (!parsed.nodes || !parsed.edges) {
       throw new Error('Invalid response structure from Gemini. Please try again.');
     }
 
-    // Assign unique IDs to each element
-    const elements: Element[] = parsed.elements.map((el) => ({
-      ...el,
-      id: generateId(),
-    }));
+    const elements: Element[] = [];
+    const idMap = new Map<string, string>();
+    parsed.nodes.forEach((n) => idMap.set(n.id, generateId()));
+
+    // Automatic Layout Engine
+    const vps = parsed.nodes.filter((n) => n.type.includes('vp'));
+    const variants = parsed.nodes.filter((n) => n.type === 'variant');
+
+    // Group variants by parent VP
+    const vpChildren = new Map<string, typeof variants>();
+    vps.forEach((vp) => vpChildren.set(vp.id, []));
+
+    parsed.edges.forEach((e) => {
+      if ((e.type === 'mandatory-line' || e.type === 'optional-line') && vpChildren.has(e.source)) {
+        const child = variants.find((v) => v.id === e.target);
+        if (child) {
+          vpChildren.get(e.source)!.push(child);
+        }
+      }
+    });
+
+    let currentX = 100;
+    let currentY = 100;
+    let maxRowHeight = 0;
+    const shapeMap = new Map<string, Element>();
+
+    // 1. Layout VPs and their children
+    vps.forEach((vp) => {
+      const children = vpChildren.get(vp.id)!;
+      const vpWidth = 140;
+      const vpHeight = 110;
+      const variantWidth = 130;
+      const variantHeight = 50;
+      const spacing = 40;
+
+      const totalChildrenWidth =
+        children.length * variantWidth + Math.max(0, children.length - 1) * spacing;
+      const groupWidth = Math.max(vpWidth, totalChildrenWidth);
+      const groupHeight = vpHeight + 100 + variantHeight;
+
+      // Wrap to next row if exceeding a typical screen width (e.g., 1200px)
+      if (currentX + groupWidth > 1200 && currentX > 100) {
+        currentX = 100;
+        currentY += maxRowHeight + 80;
+        maxRowHeight = 0;
+      }
+
+      maxRowHeight = Math.max(maxRowHeight, groupHeight);
+
+      const vpCenterX = currentX + groupWidth / 2;
+
+      const vpEl: Element = {
+        id: idMap.get(vp.id)!,
+        type: vp.type as any,
+        label: vp.label,
+        x1: vpCenterX - vpWidth / 2,
+        y1: currentY,
+        x2: vpCenterX + vpWidth / 2,
+        y2: currentY + vpHeight,
+      };
+      elements.push(vpEl);
+      shapeMap.set(vp.id, vpEl);
+
+      let childX = vpCenterX - totalChildrenWidth / 2;
+      children.forEach((child) => {
+        const childEl: Element = {
+          id: idMap.get(child.id)!,
+          type: child.type as any,
+          label: child.label,
+          x1: childX,
+          y1: currentY + vpHeight + 100,
+          x2: childX + variantWidth,
+          y2: currentY + vpHeight + 100 + variantHeight,
+        };
+        elements.push(childEl);
+        shapeMap.set(child.id, childEl);
+        childX += variantWidth + spacing;
+      });
+
+      currentX += groupWidth + 80;
+    });
+
+    // 2. Layout any floating variants
+    let floatingX = 100;
+    let floatingY = currentY + maxRowHeight + 80;
+    if (vps.length === 0) floatingY = 100;
+
+    variants.forEach((v) => {
+      if (!shapeMap.has(v.id)) {
+        if (floatingX + 130 > 1200) {
+          floatingX = 100;
+          floatingY += 100;
+        }
+
+        const vEl: Element = {
+          id: idMap.get(v.id)!,
+          type: v.type as any,
+          label: v.label,
+          x1: floatingX,
+          y1: floatingY,
+          x2: floatingX + 130,
+          y2: floatingY + 50,
+        };
+        elements.push(vEl);
+        shapeMap.set(v.id, vEl);
+        floatingX += 170;
+      }
+    });
+
+    // 3. Create edges with bindings
+    parsed.edges.forEach((e) => {
+      const sourceEl = shapeMap.get(e.source);
+      const targetEl = shapeMap.get(e.target);
+
+      if (sourceEl && targetEl) {
+        let startAnchorX = 0.5;
+        let startAnchorY = 1.0; // bottom center
+        let endAnchorX = 0.5;
+        let endAnchorY = 0.0; // top center
+
+        // Adjust anchors for cross-cutting constraints
+        if (e.type === 'requires-line' || e.type === 'excludes-line' || e.type === 'alternative-arc') {
+          if (sourceEl.x1 < targetEl.x1) {
+            startAnchorX = 1.0;
+            startAnchorY = 0.5;
+            endAnchorX = 0.0;
+            endAnchorY = 0.5;
+          } else {
+            startAnchorX = 0.0;
+            startAnchorY = 0.5;
+            endAnchorX = 1.0;
+            endAnchorY = 0.5;
+          }
+        }
+
+        const edgeEl: Element = {
+          id: generateId(),
+          type: e.type as any,
+          x1: sourceEl.x1 + (sourceEl.x2 - sourceEl.x1) * startAnchorX,
+          y1: sourceEl.y1 + (sourceEl.y2 - sourceEl.y1) * startAnchorY,
+          x2: targetEl.x1 + (targetEl.x2 - targetEl.x1) * endAnchorX,
+          y2: targetEl.y1 + (targetEl.y2 - targetEl.y1) * endAnchorY,
+          startBinding: {
+            elementId: sourceEl.id,
+            anchorX: startAnchorX,
+            anchorY: startAnchorY,
+          },
+          endBinding: {
+            elementId: targetEl.id,
+            anchorX: endAnchorX,
+            anchorY: endAnchorY,
+          },
+        };
+        elements.push(edgeEl);
+      }
+    });
 
     return { elements };
   });

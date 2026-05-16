@@ -45,6 +45,10 @@ export function Canvas() {
   // AI dialog state
   const [showAiDialog, setShowAiDialog] = useState(false);
 
+  // Infinite canvas state
+  const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+
   // Store pending bindings during line drawing
   const pendingStartBinding = useRef<Binding | undefined>(undefined);
   const pendingEndBinding = useRef<Binding | undefined>(undefined);
@@ -56,11 +60,27 @@ export function Canvas() {
     [setElements],
   );
 
+  const getCanvasPoint = useCallback(
+    (clientX: number, clientY: number) => ({
+      x: (clientX - camera.x) / camera.zoom,
+      y: (clientY - camera.y) / camera.zoom,
+    }),
+    [camera]
+  );
+
   // ─── Mouse handlers ─────────────────────────────────────────────────────
 
   const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
     if (pendingNamingId) return; // block drawing while naming dialog is open
-    const { clientX, clientY } = e;
+    
+    // Pan trigger: middle mouse click OR spacebar + left click
+    if (e.button === 1 || (e.button === 0 && isSpacePressed)) {
+      setAction('panning');
+      setDragStartPos({ x: e.clientX, y: e.clientY });
+      return;
+    }
+
+    const { x: clientX, y: clientY } = getCanvasPoint(e.clientX, e.clientY);
 
     if (tool === 'selection') {
       // Check if clicking a handle of ANY selected line
@@ -131,7 +151,22 @@ export function Canvas() {
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (pendingNamingId) return;
-    const { clientX, clientY } = e;
+
+    if (action === 'panning') {
+      (e.target as SVGElement).style.cursor = 'grabbing';
+      const dx = e.clientX - dragStartPos.x;
+      const dy = e.clientY - dragStartPos.y;
+      setCamera((prev) => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
+      setDragStartPos({ x: e.clientX, y: e.clientY });
+      return;
+    }
+
+    if (isSpacePressed) {
+      (e.target as SVGElement).style.cursor = 'grab';
+      return;
+    }
+
+    const { x: clientX, y: clientY } = getCanvasPoint(e.clientX, e.clientY);
 
     // Change cursor based on hovering
     if (tool === 'selection' && action === 'none') {
@@ -385,6 +420,12 @@ export function Canvas() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
+      if (e.code === 'Space') {
+        setIsSpacePressed(true);
+        e.preventDefault();
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
@@ -456,9 +497,52 @@ export function Canvas() {
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpacePressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, { passive: false });
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, [selectedElementIds, setElements, commitHistory, undo, redo]);
+
+  // Wheel handling for zoom/pan
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        // Zoom
+        const zoomSensitivity = 0.005;
+        const zoomDelta = -e.deltaY * zoomSensitivity;
+        setCamera((prev) => {
+          const newZoom = Math.min(Math.max(0.1, prev.zoom * (1 + zoomDelta)), 5);
+          const mouseX = e.clientX;
+          const mouseY = e.clientY;
+          const dx = (mouseX - prev.x) * (newZoom / prev.zoom - 1);
+          const dy = (mouseY - prev.y) * (newZoom / prev.zoom - 1);
+          return { x: prev.x - dx, y: prev.y - dy, zoom: newZoom };
+        });
+      } else {
+        // Pan
+        setCamera((prev) => ({
+          x: prev.x - e.deltaX,
+          y: prev.y - e.deltaY,
+          zoom: prev.zoom,
+        }));
+      }
+    };
+
+    svg.addEventListener('wheel', handleWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', handleWheel);
+  }, []);
 
   // ─── Render helper: anchor points on shapes when drawing lines ──────────
 
@@ -510,15 +594,21 @@ export function Canvas() {
 
       <svg
         ref={svgRef}
-        className="w-full h-full"
-        style={{ cursor: tool === 'selection' ? 'default' : 'crosshair' }}
+        className="w-full h-full outline-none"
+        style={{ cursor: isSpacePressed || action === 'panning' ? (action === 'panning' ? 'grabbing' : 'grab') : (tool === 'selection' ? 'default' : 'crosshair') }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
       >
         <defs>
-          <pattern id="dotGrid" width="20" height="20" patternUnits="userSpaceOnUse">
-            <circle cx="10" cy="10" r="0.8" fill="var(--dot-color)" />
+          <pattern 
+            id="dotGrid" 
+            width={20 * camera.zoom} 
+            height={20 * camera.zoom} 
+            patternUnits="userSpaceOnUse"
+            patternTransform={`translate(${camera.x % (20 * camera.zoom)}, ${camera.y % (20 * camera.zoom)})`}
+          >
+            <circle cx={10 * camera.zoom} cy={10 * camera.zoom} r={0.8 * camera.zoom} fill="var(--dot-color)" />
           </pattern>
 
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -537,55 +627,57 @@ export function Canvas() {
 
         <rect width="100%" height="100%" fill="url(#dotGrid)" />
 
-        {elements.map((element) => (
-          <ElementRenderer
-            key={element.id}
-            element={element}
-            isSelected={selectedElementIds.has(element.id)}
-          />
-        ))}
-
-        {/* Selection Box */}
-        {action === 'selecting' && selectionBoxStart && selectionBoxEnd && (
-          <rect
-            x={Math.min(selectionBoxStart.x, selectionBoxEnd.x)}
-            y={Math.min(selectionBoxStart.y, selectionBoxEnd.y)}
-            width={Math.abs(selectionBoxEnd.x - selectionBoxStart.x)}
-            height={Math.abs(selectionBoxEnd.y - selectionBoxStart.y)}
-            fill="var(--selection-color)"
-            fillOpacity={0.1}
-            stroke="var(--selection-color)"
-            strokeWidth={1}
-            style={{ pointerEvents: 'none' }}
-          />
-        )}
-
-        {/* Anchor points visible while drawing lines */}
-        {renderAnchorPoints()}
-
-        {/* Snap indicator */}
-        {snapIndicator && (
-          <g className="snap-indicator">
-            <circle
-              cx={snapIndicator.x}
-              cy={snapIndicator.y}
-              r={8}
-              fill="none"
-              stroke="var(--selection-color)"
-              strokeWidth={2}
-              opacity={0.8}
-            >
-              <animate attributeName="r" values="6;10;6" dur="1s" repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.8;0.3;0.8" dur="1s" repeatCount="indefinite" />
-            </circle>
-            <circle
-              cx={snapIndicator.x}
-              cy={snapIndicator.y}
-              r={3}
-              fill="var(--selection-color)"
+        <g transform={`translate(${camera.x}, ${camera.y}) scale(${camera.zoom})`}>
+          {elements.map((element) => (
+            <ElementRenderer
+              key={element.id}
+              element={element}
+              isSelected={selectedElementIds.has(element.id)}
             />
-          </g>
-        )}
+          ))}
+
+          {/* Selection Box */}
+          {action === 'selecting' && selectionBoxStart && selectionBoxEnd && (
+            <rect
+              x={Math.min(selectionBoxStart.x, selectionBoxEnd.x)}
+              y={Math.min(selectionBoxStart.y, selectionBoxEnd.y)}
+              width={Math.abs(selectionBoxEnd.x - selectionBoxStart.x)}
+              height={Math.abs(selectionBoxEnd.y - selectionBoxStart.y)}
+              fill="var(--selection-color)"
+              fillOpacity={0.1}
+              stroke="var(--selection-color)"
+              strokeWidth={1}
+              style={{ pointerEvents: 'none' }}
+            />
+          )}
+
+          {/* Anchor points visible while drawing lines */}
+          {renderAnchorPoints()}
+
+          {/* Snap indicator */}
+          {snapIndicator && (
+            <g className="snap-indicator">
+              <circle
+                cx={snapIndicator.x}
+                cy={snapIndicator.y}
+                r={8}
+                fill="none"
+                stroke="var(--selection-color)"
+                strokeWidth={2}
+                opacity={0.8}
+              >
+                <animate attributeName="r" values="6;10;6" dur="1s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.8;0.3;0.8" dur="1s" repeatCount="indefinite" />
+              </circle>
+              <circle
+                cx={snapIndicator.x}
+                cy={snapIndicator.y}
+                r={3}
+                fill="var(--selection-color)"
+              />
+            </g>
+          )}
+        </g>
       </svg>
 
       {/* Naming dialog */}
@@ -596,7 +688,10 @@ export function Canvas() {
           return (
             <NamingDialog
               elementType={el.type}
-              position={namingPosition}
+              position={{
+                x: namingPosition.x * camera.zoom + camera.x,
+                y: namingPosition.y * camera.zoom + camera.y,
+              }}
               onConfirm={handleNamingConfirm}
               onCancel={handleNamingCancel}
             />
