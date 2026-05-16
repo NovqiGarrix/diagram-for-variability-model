@@ -11,37 +11,49 @@ const TYPE_LABELS: Record<string, string> = {
 interface NamingDialogProps {
   elementType: ElementType;
   position: { x: number; y: number };
+  initialName?: string;
   onConfirm: (name: string) => void;
   onCancel: () => void;
 }
 
-export function NamingDialog({ elementType, position, onConfirm, onCancel }: NamingDialogProps) {
-  const [name, setName] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
+export function NamingDialog({ elementType, position, initialName = '', onConfirm, onCancel }: NamingDialogProps) {
+  const [name, setName] = useState(initialName);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    // Auto-focus the input when dialog appears
+    // Auto-focus the input and place cursor at the end
     requestAnimationFrame(() => {
-      inputRef.current?.focus();
+      const textarea = inputRef.current;
+      if (textarea) {
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      }
     });
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const trimmed = name.trim();
     if (trimmed) {
       onConfirm(trimmed);
+    } else if (initialName) {
+      // If editing existing and cleared, maybe just clear the label
+      onConfirm('');
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       onCancel();
+    } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleSubmit();
     }
   };
 
   const typeLabel = TYPE_LABELS[elementType] || elementType;
   const isArc = elementType === 'alternative-arc';
+  const isEditing = !!initialName;
 
   return (
     <div
@@ -57,7 +69,7 @@ export function NamingDialog({ elementType, position, onConfirm, onCancel }: Nam
         className="absolute z-50"
         style={{
           left: Math.min(position.x, window.innerWidth - 320),
-          top: Math.min(position.y - 40, window.innerHeight - 160),
+          top: Math.min(position.y - 60, window.innerHeight - 200),
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -81,15 +93,15 @@ export function NamingDialog({ elementType, position, onConfirm, onCancel }: Nam
               marginBottom: 8,
             }}
           >
-            {isArc ? 'Set Cardinality (min..max)' : `Name this ${typeLabel}`}
+            {isEditing ? `Edit ${typeLabel}` : (isArc ? 'Set Cardinality (min..max)' : `Name this ${typeLabel}`)}
           </div>
 
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={isArc ? 'e.g. "1..*"' : `e.g. "Engine Type"`}
+            rows={3}
             style={{
               width: '100%',
               padding: '10px 14px',
@@ -102,10 +114,21 @@ export function NamingDialog({ elementType, position, onConfirm, onCancel }: Nam
               transition: 'border-color 150ms ease',
               color: '#1e1e2e',
               backgroundColor: '#f8f9fa',
+              resize: 'none',
             }}
             onFocus={(e) => (e.target.style.borderColor = '#6965db')}
             onBlur={(e) => (e.target.style.borderColor = '#e9ecef')}
           />
+          <div
+            style={{
+              fontSize: 11,
+              color: '#adb5bd',
+              marginTop: 4,
+              textAlign: 'right'
+            }}
+          >
+            Press Ctrl+Enter to save
+          </div>
 
           <div
             style={{
@@ -137,27 +160,27 @@ export function NamingDialog({ elementType, position, onConfirm, onCancel }: Nam
             </button>
             <button
               type="submit"
-              disabled={!name.trim()}
+              disabled={!name.trim() && !isEditing}
               style={{
                 padding: '7px 16px',
                 fontSize: 13,
                 fontWeight: 600,
                 fontFamily: 'Inter, sans-serif',
                 color: '#ffffff',
-                backgroundColor: name.trim() ? '#6965db' : '#c5c5e0',
+                backgroundColor: (name.trim() || isEditing) ? '#6965db' : '#c5c5e0',
                 border: 'none',
                 borderRadius: 8,
-                cursor: name.trim() ? 'pointer' : 'not-allowed',
+                cursor: (name.trim() || isEditing) ? 'pointer' : 'not-allowed',
                 transition: 'background-color 150ms ease',
               }}
               onMouseEnter={(e) => {
-                if (name.trim()) e.currentTarget.style.backgroundColor = '#5b57c9';
+                if (name.trim() || isEditing) e.currentTarget.style.backgroundColor = '#5b57c9';
               }}
               onMouseLeave={(e) => {
-                if (name.trim()) e.currentTarget.style.backgroundColor = '#6965db';
+                if (name.trim() || isEditing) e.currentTarget.style.backgroundColor = '#6965db';
               }}
             >
-              Create
+              {isEditing ? 'Save' : 'Create'}
             </button>
           </div>
         </form>

@@ -72,7 +72,7 @@ export function Canvas() {
 
   const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
     if (pendingNamingId) return; // block drawing while naming dialog is open
-    
+
     // Pan trigger: middle mouse click OR spacebar + left click
     if (e.button === 1 || (e.button === 0 && isSpacePressed)) {
       setAction('panning');
@@ -172,7 +172,7 @@ export function Canvas() {
     if (tool === 'selection' && action === 'none') {
       let newCursor = 'default';
       const el = getElementAtPosition(clientX, clientY, elements);
-      
+
       let hoveredHandle = false;
       if (selectedElementIds.size > 0) {
         for (const id of Array.from(selectedElementIds)) {
@@ -185,7 +185,7 @@ export function Canvas() {
           }
         }
       }
-      
+
       if (hoveredHandle) {
         newCursor = 'pointer';
       } else if (newCursor === 'default' && el) {
@@ -249,7 +249,7 @@ export function Canvas() {
           newElements = newElements.map((el) => {
             if (!isLineType(el.type)) return el;
             let updated = { ...el };
-            
+
             if (el.startBinding && movedShapeIds.has(el.startBinding.elementId)) {
               const shape = newElements.find((s) => s.id === el.startBinding!.elementId)!;
               const pt = resolveBindingPoint(el.startBinding, shape);
@@ -322,7 +322,7 @@ export function Canvas() {
           const dy = Math.abs(y2 - y1);
           const dx = Math.abs(x2 - x1);
           const curvature = Math.max(40, Math.min(80, (dx + dy) * 0.3));
-          const cy = Math.min(y1, y2) - curvature - 20;
+          const cy = Math.min(y1, y2) - curvature - 40;
           setPendingNamingId(lastEl.id);
           setNamingPosition({ x: cx, y: cy });
         }
@@ -363,6 +363,31 @@ export function Canvas() {
     setAction('none');
   };
 
+  const handleDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (pendingNamingId || tool !== 'selection') return;
+
+    const { x: clientX, y: clientY } = getCanvasPoint(e.clientX, e.clientY);
+    const element = getElementAtPosition(clientX, clientY, elements);
+    
+    if (element) {
+      if (SHAPE_TYPE_LIST.includes(element.type) || element.type === 'alternative-arc') {
+        const { x1, y1, x2, y2 } = element;
+        const cx = (x1 + x2) / 2;
+        let targetY = (y1 + y2) / 2;
+        
+        if (element.type === 'alternative-arc') {
+          const dy = Math.abs(y2 - y1);
+          const dx = Math.abs(x2 - x1);
+          const curvature = Math.max(40, Math.min(80, (dx + dy) * 0.3));
+          targetY = Math.min(y1, y2) - curvature - 40;
+        }
+
+        setPendingNamingId(element.id);
+        setNamingPosition({ x: cx, y: targetY });
+      }
+    }
+  };
+
   // ─── Naming handlers ────────────────────────────────────────────────────
 
   const handleNamingConfirm = useCallback(
@@ -394,8 +419,39 @@ export function Canvas() {
   }, [setElements, commitHistory]);
 
   const handleExport = useCallback(() => {
-    if (!svgRef.current) return;
+    if (!svgRef.current || elements.length === 0) return;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    elements.forEach((el) => {
+      minX = Math.min(minX, el.x1, el.x2);
+      minY = Math.min(minY, el.y1, el.y2);
+      maxX = Math.max(maxX, el.x1, el.x2);
+      maxY = Math.max(maxY, el.y1, el.y2);
+    });
+
+    const padding = 60;
+    minX -= padding;
+    minY -= padding;
+    maxX += padding;
+    maxY += padding;
+
+    const width = maxX - minX;
+    const height = maxY - minY;
+
+    const scale = 3; // 3x resolution for HD export
+    const exportWidth = width * scale;
+    const exportHeight = height * scale;
+
     const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
+    
+    svgClone.setAttribute('width', exportWidth.toString());
+    svgClone.setAttribute('height', exportHeight.toString());
+    svgClone.setAttribute('viewBox', `${minX} ${minY} ${width} ${height}`);
+
     const defs = svgClone.querySelector('defs');
     if (defs) {
       defs.querySelectorAll('pattern').forEach((p) => p.remove());
@@ -405,15 +461,42 @@ export function Canvas() {
     svgClone.querySelectorAll('.snap-indicator').forEach((s) => s.remove());
     svgClone.querySelectorAll('.anchor-point').forEach((s) => s.remove());
 
+    // Remove camera transform so elements render at their absolute positions
+    const mainGroup = svgClone.querySelector('g');
+    if (mainGroup) {
+      mainGroup.removeAttribute('transform');
+    }
+
     const svgData = new XMLSerializer().serializeToString(svgClone);
     const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'ovm-diagram.svg';
-    link.click();
-    URL.revokeObjectURL(url);
-  }, []);
+
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = exportWidth;
+      canvas.height = exportHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#f8f9fb';
+        ctx.fillRect(0, 0, exportWidth, exportHeight);
+        ctx.drawImage(img, 0, 0, exportWidth, exportHeight);
+        
+        canvas.toBlob((pngBlob) => {
+          if (pngBlob) {
+            const pngUrl = URL.createObjectURL(pngBlob);
+            const link = document.createElement('a');
+            link.href = pngUrl;
+            link.download = 'ovm-diagram.png';
+            link.click();
+            URL.revokeObjectURL(pngUrl);
+          }
+          URL.revokeObjectURL(url);
+        }, 'image/png');
+      }
+    };
+    img.src = url;
+  }, [elements]);
 
   // ─── AI generate handler ────────────────────────────────────────────────
 
@@ -446,7 +529,7 @@ export function Canvas() {
         }
         return;
       }
-      
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
@@ -564,8 +647,8 @@ export function Canvas() {
 
   const renderAnchorPoints = () => {
     if (!isDrawingLine) return null;
-    const activeElId = action === 'drawing' 
-      ? elements[elements.length - 1].id 
+    const activeElId = action === 'drawing'
+      ? elements[elements.length - 1].id
       : (selectedElementIds.size === 1 ? Array.from(selectedElementIds)[0] : null);
 
     return elements
@@ -610,12 +693,13 @@ export function Canvas() {
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
       >
         <defs>
-          <pattern 
-            id="dotGrid" 
-            width={20 * camera.zoom} 
-            height={20 * camera.zoom} 
+          <pattern
+            id="dotGrid"
+            width={20 * camera.zoom}
+            height={20 * camera.zoom}
             patternUnits="userSpaceOnUse"
             patternTransform={`translate(${camera.x % (20 * camera.zoom)}, ${camera.y % (20 * camera.zoom)})`}
           >
@@ -703,6 +787,7 @@ export function Canvas() {
                 x: namingPosition.x * camera.zoom + camera.x,
                 y: namingPosition.y * camera.zoom + camera.y,
               }}
+              initialName={el.label || ''}
               onConfirm={handleNamingConfirm}
               onCancel={handleNamingCancel}
             />

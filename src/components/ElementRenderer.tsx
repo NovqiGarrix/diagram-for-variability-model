@@ -105,9 +105,13 @@ export function ElementRenderer({ element, isSelected }: ElementRendererProps) {
               fontFamily="Inter, sans-serif"
               textAnchor="middle"
               dominantBaseline="middle"
-              style={{ userSelect: 'none' }}
+              style={{ userSelect: 'none', pointerEvents: 'none' }}
             >
-              {label}
+              {label.split('\n').map((line, i, arr) => (
+                <tspan key={i} x={midX} dy={i === 0 ? `-${(arr.length - 1) * 0.6}em` : '1.2em'}>
+                  {line}
+                </tspan>
+              ))}
             </text>
           )}
           {/* Type label below */}
@@ -119,7 +123,7 @@ export function ElementRenderer({ element, isSelected }: ElementRendererProps) {
             fontWeight="500"
             fontFamily="Inter, sans-serif"
             textAnchor="middle"
-            style={{ userSelect: 'none', opacity: 0.6 }}
+            style={{ userSelect: 'none', opacity: 0.6, pointerEvents: 'none' }}
           >
             {isOptional ? 'Optional VP' : 'Mandatory VP'}
           </text>
@@ -163,7 +167,7 @@ export function ElementRenderer({ element, isSelected }: ElementRendererProps) {
             fontFamily="Inter, sans-serif"
             textAnchor="middle"
             dominantBaseline="middle"
-            style={{ userSelect: 'none' }}
+            style={{ userSelect: 'none', pointerEvents: 'none' }}
           >
             V
           </text>
@@ -178,9 +182,13 @@ export function ElementRenderer({ element, isSelected }: ElementRendererProps) {
               fontFamily="Inter, sans-serif"
               textAnchor="middle"
               dominantBaseline="middle"
-              style={{ userSelect: 'none' }}
+              style={{ userSelect: 'none', pointerEvents: 'none' }}
             >
-              {label}
+              {label.split('\n').map((line, i, arr) => (
+                <tspan key={i} x={midX} dy={i === 0 ? `-${(arr.length - 1) * 0.6}em` : '1.2em'}>
+                  {line}
+                </tspan>
+              ))}
             </text>
           )}
           {/* Type label below */}
@@ -192,7 +200,7 @@ export function ElementRenderer({ element, isSelected }: ElementRendererProps) {
             fontWeight="500"
             fontFamily="Inter, sans-serif"
             textAnchor="middle"
-            style={{ userSelect: 'none', opacity: 0.6 }}
+            style={{ userSelect: 'none', opacity: 0.6, pointerEvents: 'none' }}
           >
             Variant
           </text>
@@ -284,9 +292,13 @@ export function ElementRenderer({ element, isSelected }: ElementRendererProps) {
             fontWeight="600"
             fontFamily="Inter, sans-serif"
             textAnchor="middle"
-            style={{ userSelect: 'none' }}
+            style={{ userSelect: 'none', pointerEvents: 'none' }}
           >
-            {label || '[min..max]'}
+            {(label || '[min..max]').split('\n').map((line, i, arr) => (
+              <tspan key={i} x={cx} dy={i === 0 ? `-${(arr.length - 1) * 0.6}em` : '1.2em'}>
+                {line}
+              </tspan>
+            ))}
           </text>
           {/* Wider hit area */}
           <path
