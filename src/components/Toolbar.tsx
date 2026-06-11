@@ -2,7 +2,7 @@ import type { Tool } from '../types';
 import { 
   MousePointer2, 
   Triangle, 
-  Square, 
+  RectangleHorizontal, 
   Minus, 
   MoreHorizontal, 
   CircleDot,
@@ -33,7 +33,7 @@ interface ToolItem {
 const SHAPE_TOOLS: ToolItem[] = [
   { id: 'mandatory-vp', icon: Triangle, label: 'Mandatory VP', shortcut: '1' },
   { id: 'optional-vp', icon: Triangle, label: 'Optional VP', shortcut: '2' },
-  { id: 'variant', icon: Square, label: 'Variant', shortcut: '3' },
+  { id: 'variant', icon: RectangleHorizontal, label: 'Variant', shortcut: '3' },
 ];
 
 const LINE_TOOLS: ToolItem[] = [

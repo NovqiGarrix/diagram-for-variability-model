@@ -242,7 +242,7 @@ export function ElementRenderer({ element, isSelected }: ElementRendererProps) {
       const dy = Math.abs(y2 - y1);
       const dx = Math.abs(x2 - x1);
       const curvature = Math.max(40, Math.min(80, (dx + dy) * 0.3));
-      const cy = Math.min(y1, y2) - curvature;
+      const cy = Math.max(y1, y2) + curvature;
 
       return (
         <g>
@@ -252,26 +252,22 @@ export function ElementRenderer({ element, isSelected }: ElementRendererProps) {
             fill="none"
             stroke={strokeColor}
             strokeWidth={strokeWidth}
-            strokeDasharray="3 5"
             strokeLinecap="round"
           />
-          {/* Dots along the arc for visual decoration */}
-          <circle cx={x1} cy={y1} r={3} fill={strokeColor} />
-          <circle cx={x2} cy={y2} r={3} fill={strokeColor} />
-          <circle cx={cx} cy={cy + curvature * 0.3} r={2.5} fill={strokeColor} opacity={0.5} />
-          {/* [min..max] label */}
+          {/* [1..1] label */}
           <text
-            x={cx}
-            y={cy - 6}
+            x={Math.max(x1, x2) + 10}
+            y={(x1 > x2 ? y1 : y2) - 10}
             fill={labelColor}
             fontSize="12"
             fontWeight="600"
             fontFamily="Inter, sans-serif"
-            textAnchor="middle"
+            textAnchor="start"
+            dominantBaseline="middle"
             style={{ userSelect: 'none', pointerEvents: 'none' }}
           >
-            {(label || '[min..max]').split('\n').map((line, i, arr) => (
-              <tspan key={i} x={cx} dy={i === 0 ? `-${(arr.length - 1) * 0.6}em` : '1.2em'}>
+            {(label || '1..1').split('\n').map((line, i, arr) => (
+              <tspan key={i} x={Math.max(x1, x2) + 10} dy={i === 0 ? `-${(arr.length - 1) * 0.6}em` : '1.2em'}>
                 {line}
               </tspan>
             ))}

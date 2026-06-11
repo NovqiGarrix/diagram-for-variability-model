@@ -45,6 +45,9 @@ export function Canvas() {
   // AI dialog state
   const [showAiDialog, setShowAiDialog] = useState(false);
 
+  // Clipboard state
+  const [clipboard, setClipboard] = useState<Element[]>([]);
+
   // Infinite canvas state
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -318,31 +321,33 @@ export function Canvas() {
 
         // If we just drew an alternative arc, prompt for its min..max cardinality
         if (lastEl.type === 'alternative-arc') {
-          const cx = (x1 + x2) / 2;
-          const dy = Math.abs(y2 - y1);
-          const dx = Math.abs(x2 - x1);
-          const curvature = Math.max(40, Math.min(80, (dx + dy) * 0.3));
-          const cy = Math.min(y1, y2) - curvature - 40;
+          const textX = Math.max(x1, x2) + 10;
+          const textY = (x1 > x2 ? y1 : y2) - 10;
           setPendingNamingId(lastEl.id);
-          setNamingPosition({ x: cx, y: cy });
+          setNamingPosition({ x: textX, y: textY });
         }
         
         setTool('selection');
       } else {
         // Give a default size if just clicked without dragging
         if (Math.abs(x2 - x1) < 5 && Math.abs(y2 - y1) < 5) {
-          updateElement(lastEl.id, { x2: x1 + 120, y2: y1 + 100 });
+          const defaultWidth = lastEl.type === 'variant' ? 140 : 120;
+          const defaultHeight = lastEl.type === 'variant' ? 60 : 100;
+          updateElement(lastEl.id, { x2: x1 + defaultWidth, y2: y1 + defaultHeight });
         }
 
         // If we just drew a shape, prompt for a name
         if (SHAPE_TYPE_LIST.includes(lastEl.type)) {
-          const finalX2 = Math.abs(x2 - x1) < 5 ? x1 + 120 : x2;
-          const finalY2 = Math.abs(y2 - y1) < 5 ? y1 + 100 : y2;
+          const defaultWidth = lastEl.type === 'variant' ? 140 : 120;
+          const defaultHeight = lastEl.type === 'variant' ? 60 : 100;
+          const finalX2 = Math.abs(x2 - x1) < 5 ? x1 + defaultWidth : x2;
+          const finalY2 = Math.abs(y2 - y1) < 5 ? y1 + defaultHeight : y2;
           const cx = (x1 + finalX2) / 2;
           const cy = (y1 + finalY2) / 2;
           setPendingNamingId(lastEl.id);
           setNamingPosition({ x: cx, y: cy });
         }
+        setTool('selection');
       }
     } else if ((action === 'resizing-start' || action === 'resizing-end') && selectedElementIds.size === 1) {
       const selectedElementId = Array.from(selectedElementIds)[0];
@@ -378,10 +383,8 @@ export function Canvas() {
         let targetY = (y1 + y2) / 2;
         
         if (element.type === 'alternative-arc') {
-          const dy = Math.abs(y2 - y1);
-          const dx = Math.abs(x2 - x1);
-          const curvature = Math.max(40, Math.min(80, (dx + dy) * 0.3));
-          targetY = Math.min(y1, y2) - curvature - 40;
+          cx = Math.max(x1, x2) + 10;
+          targetY = (x1 > x2 ? y1 : y2) - 10;
         }
 
         setPendingNamingId(element.id);
@@ -422,6 +425,9 @@ export function Canvas() {
 
   const handleExport = useCallback(() => {
     if (!svgRef.current || elements.length === 0) return;
+
+    const fileName = prompt('Enter file name for the diagram:', 'ovm-diagram');
+    if (!fileName) return;
 
     let minX = Infinity;
     let minY = Infinity;
@@ -489,7 +495,7 @@ export function Canvas() {
             const pngUrl = URL.createObjectURL(pngBlob);
             const link = document.createElement('a');
             link.href = pngUrl;
-            link.download = 'ovm-diagram.png';
+            link.download = fileName.endsWith('.png') ? fileName : `${fileName}.png`;
             link.click();
             URL.revokeObjectURL(pngUrl);
           }
@@ -535,6 +541,90 @@ export function Canvas() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        if (selectedElementIds.size > 0) {
+          const selectedElements = elements.filter(el => selectedElementIds.has(el.id));
+          setClipboard(selectedElements);
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        if (clipboard.length > 0) {
+          const idMap = new Map<string, string>();
+          const newElements = clipboard.map(el => {
+            const newId = generateId();
+            idMap.set(el.id, newId);
+            return {
+              ...el,
+              id: newId,
+              x1: el.x1 + 20,
+              y1: el.y1 + 20,
+              x2: el.x2 + 20,
+              y2: el.y2 + 20,
+            };
+          });
+
+          const pastedElements = newElements.map(el => {
+            if (isLineType(el.type)) {
+              let updated = { ...el };
+              if (el.startBinding && idMap.has(el.startBinding.elementId)) {
+                updated.startBinding = { ...el.startBinding, elementId: idMap.get(el.startBinding.elementId)! };
+              }
+              if (el.endBinding && idMap.has(el.endBinding.elementId)) {
+                updated.endBinding = { ...el.endBinding, elementId: idMap.get(el.endBinding.elementId)! };
+              }
+              return updated;
+            }
+            return el;
+          });
+
+          setElements(prev => [...prev, ...pastedElements]);
+          setSelectedElementIds(new Set(pastedElements.map(el => el.id)));
+          commitHistory();
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        if (selectedElementIds.size > 0) {
+          const selectedElements = elements.filter(el => selectedElementIds.has(el.id));
+          const idMap = new Map<string, string>();
+          const newElements = selectedElements.map(el => {
+            const newId = generateId();
+            idMap.set(el.id, newId);
+            return {
+              ...el,
+              id: newId,
+              x1: el.x1 + 20,
+              y1: el.y1 + 20,
+              x2: el.x2 + 20,
+              y2: el.y2 + 20,
+            };
+          });
+
+          const duplicatedElements = newElements.map(el => {
+            if (isLineType(el.type)) {
+              let updated = { ...el };
+              if (el.startBinding && idMap.has(el.startBinding.elementId)) {
+                updated.startBinding = { ...el.startBinding, elementId: idMap.get(el.startBinding.elementId)! };
+              }
+              if (el.endBinding && idMap.has(el.endBinding.elementId)) {
+                updated.endBinding = { ...el.endBinding, elementId: idMap.get(el.endBinding.elementId)! };
+              }
+              return updated;
+            }
+            return el;
+          });
+
+          setElements(prev => [...prev, ...duplicatedElements]);
+          setSelectedElementIds(new Set(duplicatedElements.map(el => el.id)));
+          commitHistory();
+        }
         return;
       }
 
@@ -605,7 +695,7 @@ export function Canvas() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [selectedElementIds, setElements, commitHistory, undo, redo]);
+  }, [selectedElementIds, setElements, commitHistory, undo, redo, elements, clipboard]);
 
   // Wheel handling for zoom/pan
   useEffect(() => {

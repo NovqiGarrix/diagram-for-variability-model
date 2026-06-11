@@ -27,14 +27,14 @@ const SYSTEM_PROMPT = `You are an expert OVM (Orthogonal Variability Model) diag
 ## Edge Types
 - \`mandatory-line\` — Connects a VP to a mandatory variant.
 - \`optional-line\` — Connects a VP to an optional variant.
-- \`alternative-arc\` — Indicates an alternative choice constraint between variants.
+- \`alternative-arc\` — Indicates an alternative choice constraint between variants. Must include a "label" indicating cardinality (e.g., "1..1", "1..*").
 - \`requires-line\` — Indicates a requires dependency.
 - \`excludes-line\` — Indicates mutual exclusion.
 
 ## Output Format
 Return a JSON object with two arrays: "nodes" and "edges".
 Each node must have a unique string "id" (e.g. "n1"), a "type", and a "label".
-Each edge must have a "type", a "source" (node id), and a "target" (node id).
+Each edge must have a "type", a "source" (node id), and a "target" (node id). It can also have an optional "label" (e.g., for cardinality).
 
 Example:
 {
@@ -45,7 +45,8 @@ Example:
   ],
   "edges": [
     { "type": "mandatory-line", "source": "vp1", "target": "v1" },
-    { "type": "optional-line", "source": "vp1", "target": "v2" }
+    { "type": "optional-line", "source": "vp1", "target": "v2" },
+    { "type": "alternative-arc", "source": "v1", "target": "v2", "label": "1..1" }
   ]
 }`;
 
@@ -90,8 +91,9 @@ const RESPONSE_SCHEMA = {
           },
           source: { type: Type.STRING, description: 'Source node ID' },
           target: { type: Type.STRING, description: 'Target node ID' },
+          label: { type: Type.STRING, description: 'Label, strictly required for alternative-arc cardinality (e.g., "1..1"). Use empty string for other line types.' },
         },
-        required: ['type', 'source', 'target'],
+        required: ['type', 'source', 'target', 'label'],
       },
     },
   },
@@ -130,7 +132,7 @@ export const generateDiagram = createServerFn({ method: 'POST' })
 
     let parsed: {
       nodes: Array<{ id: string; type: string; label: string }>;
-      edges: Array<{ type: string; source: string; target: string }>;
+      edges: Array<{ type: string; source: string; target: string; label?: string }>;
     };
     try {
       parsed = JSON.parse(text);
@@ -280,6 +282,7 @@ export const generateDiagram = createServerFn({ method: 'POST' })
         const edgeEl: Element = {
           id: generateId(),
           type: e.type as any,
+          label: e.label || (e.type === 'alternative-arc' ? '1..1' : undefined),
           x1: sourceEl.x1 + (sourceEl.x2 - sourceEl.x1) * startAnchorX,
           y1: sourceEl.y1 + (sourceEl.y2 - sourceEl.y1) * startAnchorY,
           x2: targetEl.x1 + (targetEl.x2 - targetEl.x1) * endAnchorX,
